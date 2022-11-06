@@ -1,0 +1,434 @@
+---
+title: "Modelling Sollar Radiation in Hanford, California"
+author: "Linchuan Yang"
+date: "PSTAT 174"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+# knit options
+knitr::opts_chunk$set(fig.width=8, fig.height=6, message = F, warning = F)
+options(digits = 4)
+
+# packages
+library(dplyr)
+library(aTSA)
+library(astsa)
+```
+
+***
+
+## Abstract
+
+This project will focusing on Sollar Radiation in Hanford, CA. By using the Box-Jenkins Method, the time-series relationship between time and solar radiation will be analyzed, and a time-series model will be created to forecast the sollar radiation in Hanford, CA. 
+
+## Introduction
+
+Solar energy is a renewable energy source. Refers to the sun's thermal radiation energy, the main performance is often said that the sun's rays. It is generally used for power generation in modern times.Since the birth of creatures on earth, they have mainly survived on the thermal radiation provided by the sun. With the decrease of un-renewable energy sources such as fossil fuels, solar energy has become an important part of the energy used by human beings and has been continuously developed.  
+
+The dataset is from Earth System Research Laboratory, Global Monitoring Laborator. The dataset contains the solar radiation data of Hanford, CA from Feburary 1st, 2002 to current time.  
+
+Source:  
+Hanford, California, United States (HNX) Continuous in-situ measurements of solar radiation.Earth System Research Laboratory, Global Monitoring Laboratory  
+URL: https://gml.noaa.gov/aftp/data/radiation/solrad/hnx/   
+
+
+Variables:  
+
+|var name   |var type   |var description                                                        |var used   |
+|:----------|:----------|:----------------------------------------------------------------------|:---------:|
+|year		|integer	|year, i.e., 2002                                                       |x          |
+|jday		|integer	|Julian day (1 through 365 [or 366])                                    |           |
+|month		|integer	|number of the month (1-12)                                             |x          |
+|day		|integer	|day of the month(1-31)                                                 |           |
+|hour		|integer	|hour of the day (0-23)                                                 |           |
+|min		|integer	|minute of the hour (0-59)                                              |           |
+|dt	        |real       |decimal time (hour.decimalminutes),e. g., 23.5 = 2330                  |           |
+|zen		|real	    |solar zenith angle (degrees)                                           |           |
+|dw_psp		|real	    |downwelling global solar (Watts m^-2)                                  |x          |
+|direct		|real	    |direct solar (Watts m^-2)                                              |           |
+|diffuse	|real	    |downwelling diffuse solar (Watts m^-2)                                 |           |
+|uvb		|real	    |global UVB (milliWatts m^-2)                                           |           |
+|uvb_temp   |real	    |UVB temperature (C) -- 25 deg. C is normal                             |           |
+|qc_dwpsp	|integer    |quality control parameter for downwelling global solar (0=good)        |           |
+|qc_direct	|integer    |quality control parameter for direct solar (0=good)                    |           |
+|qc_diffuse	|integer    |quality control parameter for diffuse solar (0=good)                   |           |
+|qc_uvb		|integer    |quality control parameter for UVB irradiance (0=good)                  |           |
+|qc_uvb_temp|integer    |quality control parameter for the UVB instrument temperature (0=good)  |           |
+|std_dw_psp	|real	    |standard deviation of the 1-sec. samples for global solar (dw_psp)     |           |
+|std_direct	|real	    |standard deviation of the 1-sec. samples for direct solar              |           |
+|std_diffuse|real	    |standard deviation of the 1-sec. samples for diffuse solar             |           |
+|std_uvb	|real	    |standard deviation of the 1-sec. samples for uvb                       |           |
+
+
+This project is only focusing on three variables(year, month, dw_psp), therefore, the raw data will be preprocessed to monthly data. After, the data are split to two set, training set(2003.01-2020.12) and testing set(2021.01-2021.12) for model validation.  
+
+This project is strictly following the Box-Jenkins Modelling Method.  
+During model identification, data is differenced first with apporiate differencing times by using Augmented Dickey-Fuller test. By ploting the acf and pacf plot of differenced data about 72 models are nominated.  
+During model estimation, 72 nominated models are being checked with AICc criterion. Only best three models are nominated to be diagnosed.  
+During model diagnose, data are fit with three best nominated models. To choose the best model for model forecating, Ljung-Box test and Shapiro-Wilk test are performed and acf, pacf, histigram, qqplot are plotted to test the independence and normality of the residuals. 
+During model forecast, the training data are fit with the best model and predict the solar radiation values in 2021. To validate the data, the compared graph of predicted value and true value are plotted along with confidence interval of predicted value.  
+
+\newpage
+
+## Read Raw Data & Preprocessing
+```{r}
+setwd("hnx_solar")
+# read_list <- list.files(pattern = "\\.dat")
+
+# merge <- read.table(file = "hnx03001.dat", skip = 2, header = FALSE)
+
+# colnames(merge) = c("year","jday","month","day","hour","min",
+#                     "dt","zen","dw_psp","qc_dwpsp","direct","qc_direct",
+#                     "diffuse","qc_diffuse","uvb","qc_uvb",
+#                     "uvb_temp","qc_uvb_temp","std_dw_psp",
+#                     "std_direct","std_diffuse","std_uvb")
+
+# merge[merge == -9999.9] <- NA
+
+# merge <- data.frame(merge["year"], merge["month"], merge["day"], merge["dw_psp"])
+
+# for (file in read_list[-which(read_list == "hnx03001.dat")]) {
+#     print(paste("processing:", file))
+#     new = read.table(file, skip = 2)
+#     colnames(new) = c("year","jday","month","day","hour","min",
+#                       "dt","zen","dw_psp","qc_dwpsp","direct","qc_direct",
+#                       "diffuse","qc_diffuse","uvb","qc_uvb",
+#                       "uvb_temp","qc_uvb_temp","std_dw_psp",
+#                       "std_direct","std_diffuse","std_uvb")
+
+#     new[new == -9999.9] <- NA
+#     new <- data.frame(new["year"], new["month"], new["day"], new["dw_psp"])
+
+#     merge = rbind(merge, new)
+# }
+
+# data = merge %>% group_by(year, month) %>% 
+#                 summarize(monthly_dw_psp = mean(dw_psp, na.rm = TRUE))
+
+# write.csv(data, file = "hnx_solar_monthly.csv", col.names = TRUE)
+
+# read from merged monthly data
+data = read.csv("hnx_solar_monthly.csv")$monthly_dw_psp
+data.train = data[1:216]
+data.test = data[217:228]
+```
+
+Since reading from large amount of files will take a long time, for future use, the data has been merged to a single csv file with only needed variables.  
+
+There are also bad data that equals to -9999.9, so NA are filled while merging. Since only monthly data were focused, the bad data in monthly downwelling global solar variable where ignored and filled with mean value.  
+
+At last, the data are splited into train data(date:2003.01-2020.12) for training and test data(date:2021.01-2021.12) for validating. 
+
+\newpage
+
+
+## Model Identification:  
+### Analysing from the Original Data
+In order to start the future analysing, we plot the original time series data first.  
+
+```{r}
+# plot the original data
+ts.plot(data.train, ylab = "Monthly Mean Downwelling Global Solar (Watts m^-2)", 
+                 xlab = "Months(start on 2003.01)")
+title("Monthly Mean Sollar Radiation in Hanford, CA")
+```
+
+We can see the seasonality pattern is shown in the plot.  
+
+Next, we plot the ACF and PACF plot. 
+
+```{r}
+par(mfrow=c(1,2))
+acf(data.train, main = "ACF Plot")
+pacf(data.train, main = "PACF Plot")
+```
+
+We can see from the ACF is kept bouncing and PACF is dying out.  
+Since ACF is bouncing, the original data is not good for modelling.  
+Therefore, we will need to do differencing on the original data. 
+
+\newpage
+
+
+### Dickey-Fuller Test  
+In order to known the appropriate number of differencing time to the original data, we will do the Augmented Dickey-Fuller Test.  
+
+```{r}
+adf.test(data)
+```
+
+From the test result, we can see taking difference one time and two times is appropriate based on the p-value. 
+
+\newpage
+
+
+### Take First Difference  
+We will try to take one difference on the original data. 
+
+```{r}
+# take first difference
+data.diff = diff(data.train)
+ts.plot(data.diff)
+title("TS Plot After First Difference")
+```
+
+Next, we plot the ACF and PACF plot of the first difference data.  
+
+```{r}
+par(mfrow=c(1,2))
+acf(data.diff, main = "ACF Plot After First Difference")
+pacf(data.diff, main = "PACF Plot After First Difference")
+```
+
+Since there are still seasonal patterns on the first difference data, ACF plot is still showing bouncing pattern, and PACF is still showing dying out pattern.  
+Therefore, we will try to take another difference on the data. 
+
+\newpage 
+
+
+### Take Second Difference  
+We will try to take the second difference on the original data. 
+
+```{r}
+# take second difference
+data.diff2 = diff(data.diff)
+ts.plot(data.diff2)
+title("TS Plot After Second Difference")
+```
+
+Next, we plot the ACF and PACF plot of the second difference data. 
+
+```{r}
+par(mfrow=c(1,2))
+acf(data.diff2, main = "ACF Plot After Second Difference")
+pacf(data.diff2, main = "PACF Plot After Second Difference")
+```
+
+From the time series plot, we can see the data is turning to a white noise pattern and PACF is still showing a die out pattern which are good for modelling.  
+However, the ACF plot is still showing the bouncing pattern which is not good for modelling.  
+
+### Model Nominees  
+Based on the anlysis above, SARIMA model will be an appropriate model for the data due to its seasonal pattern.  
+
+Now, let's decide the parameters for the SARIMA model.  
+Since the data show seaonality with loop of 1 year, therefore, S should be 12.  
+Since Q and q is not decidable based on the bouncing patterns of all the ACF plot, so we will try different values(1~12) during the Model Estimation.  
+Since all PACF plot are showing an expotental decay pattern, therefore, P should be 1.  
+  
+Since we take first and second difference, d can be either 1 or 2.  
+For d = 1:   
+Since PACF plot showing significant after Lag 7, therefore, p should be 7.  
+For d = 2:  
+Since PACF plot showing significant after Lag 10, therefore, p should be 10.  
+
+***
+
+Therefore, the nominees are:  
+For d = 1, p = 7:  
+$$SARIMA(p=7,d=1,q=1)(P=1,D=1,Q=1)_{S=12}$$
+$$SARIMA(p=7,d=1,q=1)(P=1,D=1,Q=2)_{S=12}$$
+$$SARIMA(p=7,d=1,q=1)(P=1,D=1,Q=3)_{S=12}$$
+$$\vdots$$
+$$SARIMA(p=7,d=1,q=1)(P=1,D=1,Q=6)_{S=12}$$
+
+$$SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=1)_{S=12}$$
+$$SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=2)_{S=12}$$
+$$SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=3)_{S=12}$$
+$$\vdots$$
+$$SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=6)_{S=12}$$
+$$SARIMA(p=7,d=1,q=3)(P=1,D=1,Q=1)_{S=12}$$
+$$\vdots$$
+$$\vdots$$
+$$SARIMA(p=7,d=1,q=6)(P=1,D=1,Q=6)_{S=12}$$
+
+For d = 2, p = 10: 
+$$SARIMA(p=10,d=2,q=1)(P=1,D=1,Q=1)_{S=12}$$
+$$SARIMA(p=10,d=2,q=1)(P=1,D=1,Q=2)_{S=12}$$
+$$SARIMA(p=10,d=2,q=1)(P=1,D=1,Q=3)_{S=12}$$
+$$\vdots$$
+$$SARIMA(p=10,d=2,q=1)(P=1,D=1,Q=6)_{S=12}$$
+
+$$SARIMA(p=10,d=2,q=2)(P=1,D=1,Q=1)_{S=12}$$
+$$SARIMA(p=10,d=2,q=2)(P=1,D=1,Q=2)_{S=12}$$
+$$SARIMA(p=10,d=2,q=2)(P=1,D=1,Q=3)_{S=12}$$
+$$\vdots$$
+$$SARIMA(p=10,d=2,q=2)(P=1,D=1,Q=6)_{S=12}$$
+$$SARIMA(p=10,d=2,q=3)(P=1,D=1,Q=1)_{S=12}$$
+$$\vdots$$
+$$\vdots$$
+$$SARIMA(p=10,d=2,q=6)(P=1,D=1,Q=6)_{S=12}$$
+
+\newpage
+
+
+## Model Estimation: 
+Now, for model estimation, we will use AICc value as a criterion to check which model fit the best. 
+
+```{r}
+# aiccs <- matrix(NA, nr =6, nc = 6)
+# dimnames(aiccs) = list(q = c(1:6), Q = c(1:6))
+```
+
+For d = 1, p = 7:  
+```{r}
+setwd("hnx_solar")
+
+# Model Estimation for d=1, p=7
+# for (q in 1:6) {
+#     for (Q in 1:6) {
+#         try({
+#             aiccs[q,Q] = sarima(xdata = data.train, 
+#                             p = 7, d = 1, q = q, 
+#                             P = 1, D = 1, Q = Q, S = 12)$AICc
+#             print(paste("d1p7: {", " q: ", q, "Q: ", Q, "}"))
+#         })
+#     }
+# }
+# write.csv(aiccs, "d1p7_aicc.csv", col.names = TRUE, row.names = TRUE)
+
+read.csv("d1p7_aicc.csv", header = TRUE)
+```
+
+For d = 2, p = 10:  
+```{r}
+setwd("hnx_solar")
+
+# Model Estimation for d=2, p=10
+# for (q in c(1:6)) {
+#     for (Q in c(1:6)) {
+#         try({
+#             aiccs[q,Q] = sarima(xdata = data.train, 
+#                             p = 10, d = 2, q = q, 
+#                             P = 1, D = 1, Q = Q, S = 12)$AICc
+#             print(paste("d2p10: {", " q: ", q, "Q: ", Q, "}"))
+#         })
+#     }
+# }
+# write.csv(aiccs, "d2p10_aicc.csv", col.names = TRUE, row.names = TRUE)
+
+read.csv("d2p10_aicc.csv", header = TRUE)
+```
+
+Based on the AICc Values, we find out the following three models are the best models to fit. 
+
+$$SARIMA(p=7,d=1,q=1)(P=1,D=1,Q=2)_{S=12}$$
+$$SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=2)_{S=12}$$
+$$SARIMA(p=7,d=1,q=3)(P=1,D=1,Q=2)_{S=12}$$
+
+\newpage
+
+
+## Model Diagnostics: 
+### $SARIMA(p=7,d=1,q=1)(P=1,D=1,Q=2)_{S=12}$:  
+```{r}
+# fit the first model
+fit.1 = sarima(data.train, p=7, d=1, q=1, P=1, D=1, Q=2, S=12, detail=FALSE)
+fit.1
+
+# Ljung-Box and Shapiro-Wilk test
+Box.test(resid(fit.1$fit), type="Ljung-Box")
+shapiro.test(resid(fit.1$fit))
+
+ts.plot(resid(fit.1$fit), main = "Fitted Residuals")
+par(mfrow=c(2,2))
+acf(resid(fit.1$fit), main="ACF")
+pacf(resid(fit.1$fit), main="PACF")
+hist(resid(fit.1$fit), main="Histogram")
+qqnorm(resid(fit.1$fit))
+qqline(resid(fit.1$fit), col="blue")
+title("Fitted Residuals Diagnostics", outer=TRUE)
+```
+
+We can see for $SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=2)_{S=12}$ model, the Ljung-Box independence test does pass based on its p-value, the Shapiro-Wilk normality test does pass based on its p-value. Therefore, we will leave this model as a great backup model.  
+
+\newpage
+
+
+### $SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=2)_{S=12}$:  
+```{r}
+# fit the second model
+fit.2 = sarima(data.train, p=7, d=1, q=2, P=1, D=1, Q=2, S=12, detail=FALSE)
+fit.2
+
+# Ljung-Box and Shapiro-Wilk test
+Box.test(resid(fit.2$fit), type="Ljung-Box")
+shapiro.test(resid(fit.2$fit))
+
+ts.plot(resid(fit.2$fit), main = "Fitted Residuals")
+par(mfrow=c(2,2))
+acf(resid(fit.2$fit), main="ACF")
+pacf(resid(fit.2$fit), main="PACF")
+hist(resid(fit.2$fit), main="Histogram")
+qqnorm(resid(fit.2$fit))
+qqline(resid(fit.2$fit), col="blue")
+title("Fitted Residuals Diagnostics", outer=TRUE)
+```
+
+We can see for $SARIMA(p=7,d=1,q=2)(P=1,D=1,Q=2)_{S=12}$ model, same as previous model, the Ljung-Box independence test does pass based on its p-value, the Shapiro-Wilk normality test does pass based on its p-value. Therefore, we will leave this model as a great backup model.  
+
+\newpage
+
+
+### $SARIMA(p=7,d=1,q=3)(P=1,D=1,Q=2)_{S=12}$:  
+```{r}
+# fit the third model
+fit.3 = sarima(data.train, p=7, d=1, q=3, P=1, D=1, Q=2, S=12, detail=FALSE)
+fit.3
+
+# Ljung-Box and Shapiro-Wilk test
+Box.test(resid(fit.3$fit), type="Ljung-Box")
+shapiro.test(resid(fit.3$fit))
+
+ts.plot(resid(fit.3$fit), main = "Fitted Residuals")
+par(mfrow=c(2,2))
+acf(resid(fit.3$fit), main="ACF")
+pacf(resid(fit.3$fit), main="PACF")
+hist(resid(fit.3$fit), main="Histogram")
+qqnorm(resid(fit.3$fit))
+qqline(resid(fit.3$fit), col="blue")
+title("Fitted Residuals Diagnostics", outer=TRUE)
+```
+
+We can see for $SARIMA(p=7,d=1,q=3)(P=1,D=1,Q=2)_{S=12}$ model, same as previous model, the Ljung-Box independence test does pass based on its p-value, the Shapiro-Wilk normality test does pass based on its p-value. Therefore, we will leave this model as a backup model.  
+
+
+### The Model for Forecasting: 
+Since all three models passed the independence and normality test, we will use the model with best test statistics. Therefore, we will use $SARIMA(p=7,d=1,q=3)(P=1,D=1,Q=2)_{S=12}$ for the model forecast.  
+
+\newpage
+
+
+## Model Forecast: 
+```{r}
+# model forecast
+data.pred = predict(fit.3$fit, n.ahead=12)
+data.frame(pred = data.pred$pred, true = data.test)
+
+# plot the forecasted values
+ts.plot(data.train, ylab = "Monthly Mean Downwelling Global Solar (Watts m^-2)",
+                    xlab = "Months(start on 2003.01)",xlim=c(192,228))
+points(ts(data.test,start=c(217,1)), cex=0.8, pch=1, col="red")
+lines(ts(data.test,start=c(217,1)), cex=0.8, pch=1, col="red")
+points(data.pred$pred, cex=0.8, col="blue")
+lines(data.pred$pred, cex=0.8, col="blue")
+lines(data.pred$pred+1.96*data.pred$se, lty=2, col="blue")
+lines(data.pred$pred-1.96*data.pred$se, lty=2, col="blue")
+
+legend(191,350,legend=c("Predicted Value", "True Value"),col=c("blue","red"),lty=1,cex=0.8)
+title("Monthly Mean Sollar Radiation in Hanford, CA")
+```
+
+## Conclusion  
+We use year 2021 as our test set, and predict 2021 based on our model. We can see the $SARIMA(p=7,d=1,q=3)(P=1,D=1,Q=2)_{S=12}$ model fits really well. All the true values are within the predicted confidence interval. Therefore, this model is a valid model to predict the monthly mean sollar radiation in Hanford, CA.  
+
+## References  
+Hanford, California, United States (HNX) Continuous in-situ measurements of solar radiation.Earth System Research Laboratory, Global Monitoring Laboratory, URL: https://gml.noaa.gov/aftp/data/radiation/solrad/hnx/   
+Rob J Hyndman, Box–Jenkins modelling, URL: http://robjhyndman.com/papers/BoxJenkins.pdf
+
+\newpage
+
+
+## Appendix
+```{r appendix, ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
